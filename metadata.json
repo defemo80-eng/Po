@@ -1,0 +1,6 @@
+{
+  "name": "DeFitt",
+  "description": "Aplicación fitness 100% offline con contador real de pasos, registro de comidas con fotos locales, ejercicios personalizados, logros, DeFitt Coins e historial.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

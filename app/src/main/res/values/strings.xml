@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DeFitt</string>
+    <string name="slogan">TU CUERPO. TU META. TU PROGRESO.</string>
+    <string name="welcome_title">BIENVENIDO A DEFITT.</string>
+    <string name="create_account">CREAR CUENTA</string>
+    <string name="already_have_account">YA TENGO UNA CUENTA</string>
+    <string name="create_my_account">CREAR MI CUENTA</string>
+    <string name="nav_home">INICIO</string>
+    <string name="nav_meals">COMIDA</string>
+    <string name="nav_exercises">EJERCICIOS</string>
+    <string name="nav_achievements">LOGROS</string>
+    <string name="nav_records">REGISTROS</string>
+    <string name="notification_channel_steps">Contador de pasos DeFitt</string>
+    <string name="notification_channel_reminders">Recordatorios saludables</string>
+</resources>
