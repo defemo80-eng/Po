@@ -69,6 +69,7 @@ class StepSensorManager(
         when (event.sensor.type) {
             Sensor.TYPE_STEP_COUNTER -> {
                 val cumulativeSteps = event.values.firstOrNull() ?: return
+                if (!cumulativeSteps.isFinite() || cumulativeSteps < 0f) return
                 onStepsEvent(ActiveStepSensorKind.STEP_COUNTER, cumulativeSteps, true)
             }
             Sensor.TYPE_STEP_DETECTOR -> {
@@ -80,7 +81,6 @@ class StepSensorManager(
                 val y = event.values[1]
                 val z = event.values[2]
                 val magnitude = sqrt(x * x + y * y + z * z)
-                // Low-pass filter to isolate gravity baseline
                 gravityFiltered = 0.9f * gravityFiltered + 0.1f * magnitude
                 val linearDelta = magnitude - gravityFiltered
                 val now = System.currentTimeMillis()

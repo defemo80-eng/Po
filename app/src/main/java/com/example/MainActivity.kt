@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.screens.AchievementsScreen
 import com.example.ui.screens.DeFittSplashScreen
+import com.example.ui.screens.ExerciseDetailScreen
 import com.example.ui.screens.ExercisesScreen
 import com.example.ui.screens.ExistingAccountScreen
 import com.example.ui.screens.HomeScreen
@@ -119,6 +120,7 @@ fun DeFittAppRoot(viewModel: DeFittViewModel) {
     var authRoute by rememberSaveable { mutableStateOf(AuthScreenRoute.WELCOME) }
     var currentTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     var showProfile by rememberSaveable { mutableStateOf(false) }
+    var selectedExerciseCode by rememberSaveable { mutableStateOf<String?>(null) }
 
     when (val state = authState) {
         AuthUiState.Loading -> {
@@ -127,6 +129,7 @@ fun DeFittAppRoot(viewModel: DeFittViewModel) {
 
         is AuthUiState.LoggedOut -> {
             showProfile = false
+            selectedExerciseCode = null
             Scaffold(
                 containerColor = DeFittBlack,
                 snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -198,6 +201,10 @@ fun DeFittAppRoot(viewModel: DeFittViewModel) {
             val selectedDateCoins by viewModel.selectedDateCoins.collectAsStateWithLifecycle()
             val sensorStatus by viewModel.sensorStatus.collectAsStateWithLifecycle()
 
+            val selectedExercise = selectedExerciseCode?.let { code ->
+                allExercises.firstOrNull { it.code == code }
+            }
+
             if (showProfile) {
                 Scaffold(
                     containerColor = DeFittBlack,
@@ -221,6 +228,25 @@ fun DeFittAppRoot(viewModel: DeFittViewModel) {
                             onDeleteAccount = {
                                 showProfile = false
                                 viewModel.deleteLocalAccount()
+                            }
+                        )
+                    }
+                }
+            } else if (selectedExercise != null) {
+                Scaffold(
+                    containerColor = DeFittBlack,
+                    contentWindowInsets = WindowInsets.safeDrawing,
+                    snackbarHost = { SnackbarHost(snackbarHostState) }
+                ) { innerPadding ->
+                    Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                        ExerciseDetailScreen(
+                            exercise = selectedExercise,
+                            profile = state.profile,
+                            isDoneToday = todayCompleted.any { it.exerciseName == selectedExercise.name },
+                            onBack = { selectedExerciseCode = null },
+                            onComplete = { elapsed ->
+                                viewModel.completeExercise(selectedExercise, elapsed)
+                                selectedExerciseCode = null
                             }
                         )
                     }
@@ -344,7 +370,7 @@ fun DeFittAppRoot(viewModel: DeFittViewModel) {
                                         personalizedExercises = personalizedExercises,
                                         routines = allRoutines,
                                         completedToday = todayCompleted,
-                                        onCompleteExercise = viewModel::completeExercise
+                                        onOpenExercise = { exercise -> selectedExerciseCode = exercise.code }
                                     )
 
                                     MainTab.ACHIEVEMENTS -> AchievementsScreen(

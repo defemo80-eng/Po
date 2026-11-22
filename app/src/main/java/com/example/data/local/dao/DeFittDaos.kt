@@ -179,6 +179,40 @@ interface ExerciseDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertExercises(exercises: List<ExerciseEntity>)
 
+    @Query(
+        """
+        UPDATE exercises
+        SET name = :name,
+            category = :category,
+            explanation = :explanation,
+            instructions = :instructions,
+            difficulty = :difficulty,
+            durationSeconds = :durationSeconds,
+            recommendedReps = :recommendedReps,
+            restSeconds = :restSeconds,
+            illustrationKey = :illustrationKey,
+            isWarmupOrRecovery = :isWarmupOrRecovery,
+            safetyWarning = :safetyWarning,
+            videoResName = :videoResName
+        WHERE code = :code
+        """
+    )
+    suspend fun updateExerciseByCode(
+        code: String,
+        name: String,
+        category: String,
+        explanation: String,
+        instructions: String,
+        difficulty: String,
+        durationSeconds: Int,
+        recommendedReps: String,
+        restSeconds: Int,
+        illustrationKey: String,
+        isWarmupOrRecovery: Boolean,
+        safetyWarning: String,
+        videoResName: String
+    )
+
     @Query("SELECT * FROM routines ORDER BY estimatedMinutes ASC")
     fun observeAllRoutines(): Flow<List<RoutineEntity>>
 

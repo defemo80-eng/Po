@@ -2,11 +2,13 @@ package com.example
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -30,7 +32,7 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun registrationToDashboardAndTabNavigationFlowWorks() {
+    fun registrationToDashboardExerciseDetailAndTabNavigationFlowWorks() {
         composeTestRule.waitForIdle()
 
         // Welcome screen
@@ -61,6 +63,23 @@ class ExampleRobolectricTest {
 
         composeTestRule.onNodeWithTag("nav_exercises").performClick()
         composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("RUTINAS INTEGRADAS").assertIsDisplayed()
+
+        // Scroll LazyColumn to exercise card and open dedicated Exercise Detail Screen
+        composeTestRule.onNodeWithTag("exercises_lazy_column")
+            .performScrollToNode(hasTestTag("exercise_card_warmup_joint_mobility"))
+        composeTestRule.onNodeWithTag("exercise_card_warmup_joint_mobility").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("exercise_video_player").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("exercise_detail_list")
+            .performScrollToNode(hasTestTag("exercise_start_button"))
+        composeTestRule.onNodeWithTag("exercise_start_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("exercise_complete_button").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("exercise_complete_button").performClick()
+        composeTestRule.waitForIdle()
+
+        // Returned cleanly to Exercises list
         composeTestRule.onNodeWithText("RUTINAS INTEGRADAS").assertIsDisplayed()
 
         composeTestRule.onNodeWithTag("nav_achievements").performClick()

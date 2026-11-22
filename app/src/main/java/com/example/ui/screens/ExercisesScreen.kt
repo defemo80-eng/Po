@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,29 +17,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,19 +44,16 @@ import com.example.data.local.entity.UserProfileEntity
 import com.example.ui.components.ExerciseIllustration
 import com.example.ui.theme.DeFittBlack
 import com.example.ui.theme.DeFittBorder
-import com.example.ui.theme.DeFittGold
-import com.example.ui.theme.DeFittSurface
 import com.example.ui.theme.DeFittSurfaceCard
 import com.example.ui.theme.DeFittTextSecondary
 import com.example.ui.theme.DeFittWhite
-import com.example.ui.theme.JetBrainsMonoFamily
 import com.example.ui.theme.NeonGreen
 import com.example.ui.theme.NeonGreenContainer
-import com.example.util.DateUtils
-import kotlinx.coroutines.delay
 
 private val EXERCISE_CATEGORIES = listOf(
     "TODOS" to "Todos",
+    "CALENTAMIENTO" to "Calentamiento",
+    "RECUPERACION" to "Recuperación",
     "PECHO" to "Pecho",
     "BRAZOS" to "Brazos",
     "ABDOMEN" to "Abdomen",
@@ -79,7 +64,6 @@ private val EXERCISE_CATEGORIES = listOf(
     "CUERPO_COMPLETO" to "Cuerpo completo"
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExercisesScreen(
     profile: UserProfileEntity?,
@@ -87,11 +71,10 @@ fun ExercisesScreen(
     personalizedExercises: List<ExerciseEntity>,
     routines: List<RoutineEntity>,
     completedToday: List<CompletedExerciseEntity>,
-    onCompleteExercise: (ExerciseEntity, Int) -> Unit
+    onOpenExercise: (ExerciseEntity) -> Unit
 ) {
     var selectedCategory by remember { mutableStateOf("TODOS") }
     var selectedRoutine by remember { mutableStateOf<RoutineEntity?>(null) }
-    var activeExercise by remember { mutableStateOf<ExerciseEntity?>(null) }
 
     val visibleExercises = remember(allExercises, selectedCategory, selectedRoutine) {
         when {
@@ -111,7 +94,8 @@ fun ExercisesScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeFittBlack),
+            .background(DeFittBlack)
+            .testTag("exercises_lazy_column"),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -124,9 +108,9 @@ fun ExercisesScreen(
                 )
                 Text(
                     text = if (profile != null) {
-                        "Adaptado a tu nivel ${profile.experienceLevel.lowercase()} (${profile.availableMinutes} min/día). Todo incluido sin internet."
+                        "Adaptado a tu nivel ${profile.experienceLevel.lowercase()} (${profile.availableMinutes} min/día). Cada ejercicio incluye video de 5s sin internet."
                     } else {
-                        "Entrenamiento guiado offline con calentamiento y recuperación."
+                        "Entrenamiento guiado offline con video de 5s en bucle para cada ejercicio."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = DeFittTextSecondary
@@ -148,7 +132,7 @@ fun ExercisesScreen(
                         RecommendedExerciseTile(
                             exercise = exercise,
                             isDoneToday = exercise.name in completedCodesToday,
-                            onClick = { activeExercise = exercise }
+                            onClick = { onOpenExercise(exercise) }
                         )
                     }
                 }
@@ -245,29 +229,11 @@ fun ExercisesScreen(
             ExerciseRowCard(
                 exercise = exercise,
                 isDoneToday = exercise.name in completedCodesToday,
-                onClick = { activeExercise = exercise }
+                onClick = { onOpenExercise(exercise) }
             )
         }
 
         item { Spacer(modifier = Modifier.height(20.dp)) }
-    }
-
-    activeExercise?.let { exercise ->
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { activeExercise = null },
-            sheetState = sheetState,
-            containerColor = DeFittSurface
-        ) {
-            ExerciseWorkoutSheet(
-                exercise = exercise,
-                onComplete = { elapsed ->
-                    onCompleteExercise(exercise, elapsed)
-                    activeExercise = null
-                },
-                onClose = { activeExercise = null }
-            )
-        }
     }
 }
 
@@ -279,7 +245,7 @@ private fun RecommendedExerciseTile(
 ) {
     Surface(
         modifier = Modifier
-            .width(190.dp)
+            .width(196.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = DeFittSurfaceCard,
@@ -297,6 +263,8 @@ private fun RecommendedExerciseTile(
                 )
                 if (isDoneToday) {
                     Icon(Icons.Default.CheckCircle, contentDescription = "Completado hoy", tint = NeonGreen)
+                } else {
+                    Icon(Icons.Default.PlayCircle, contentDescription = "Ver video 5s", tint = NeonGreen)
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -308,7 +276,7 @@ private fun RecommendedExerciseTile(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "${exercise.recommendedReps} · ${exercise.difficulty}",
+                text = "${exercise.recommendedReps} · Video 5s",
                 style = MaterialTheme.typography.bodyMedium,
                 color = NeonGreen
             )
@@ -322,6 +290,12 @@ private fun ExerciseRowCard(
     isDoneToday: Boolean,
     onClick: () -> Unit
 ) {
+    val categoryLabel = when (exercise.category) {
+        "CALENTAMIENTO" -> "CALENTAMIENTO"
+        "RECUPERACION" -> "RECUPERACIÓN"
+        "CUERPO_COMPLETO" -> "CUERPO COMPLETO"
+        else -> exercise.category
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -346,7 +320,7 @@ private fun ExerciseRowCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = if (exercise.isWarmupOrRecovery) "CALENTAMIENTO / RECUP." else exercise.category.replace("_", " "),
+                        text = categoryLabel,
                         style = MaterialTheme.typography.labelMedium,
                         color = NeonGreen
                     )
@@ -366,186 +340,16 @@ private fun ExerciseRowCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "${exercise.recommendedReps} · Descanso: ${exercise.restSeconds}s",
+                    text = "${exercise.recommendedReps} · Descanso: ${exercise.restSeconds}s · Video 5s",
                     style = MaterialTheme.typography.bodyMedium,
                     color = DeFittTextSecondary
                 )
             }
             if (isDoneToday) {
                 Icon(Icons.Default.CheckCircle, contentDescription = "Completado hoy", tint = NeonGreen)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ExerciseWorkoutSheet(
-    exercise: ExerciseEntity,
-    onComplete: (elapsedSeconds: Int) -> Unit,
-    onClose: () -> Unit
-) {
-    var isRunning by remember { mutableStateOf(false) }
-    var isResting by remember { mutableStateOf(false) }
-    var remainingSeconds by remember { mutableIntStateOf(exercise.durationSeconds) }
-    var restRemaining by remember { mutableIntStateOf(exercise.restSeconds) }
-    var elapsedSeconds by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(isRunning, isResting) {
-        while (isRunning) {
-            delay(1000L)
-            if (isResting) {
-                if (restRemaining > 0) restRemaining-- else isResting = false
             } else {
-                elapsedSeconds++
-                if (remainingSeconds > 0) remainingSeconds--
+                Icon(Icons.Default.PlayCircle, contentDescription = "Abrir ejercicio", tint = NeonGreen)
             }
         }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ExerciseIllustration(
-                illustrationKey = exercise.illustrationKey,
-                modifier = Modifier.size(72.dp)
-            )
-            Spacer(modifier = Modifier.width(14.dp))
-            Column {
-                Text(
-                    text = "${exercise.category.replace("_", " ")} · ${exercise.difficulty}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = NeonGreen
-                )
-                Text(
-                    text = exercise.name,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = DeFittWhite
-                )
-                Text(
-                    text = "${exercise.recommendedReps} · Descanso ${exercise.restSeconds}s",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = DeFittTextSecondary
-                )
-            }
-        }
-
-        // Timer Box
-        Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = DeFittBlack,
-            border = BorderStroke(1.dp, if (isRunning) NeonGreen else DeFittBorder),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = if (isResting) "DESCANSO" else "TIEMPO DEL EJERCICIO",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (isResting) DeFittGold else NeonGreen
-                    )
-                    Text(
-                        text = DateUtils.formatTimerClock(if (isResting) restRemaining else remainingSeconds),
-                        style = MaterialTheme.typography.displayMedium,
-                        color = DeFittWhite,
-                        fontFamily = JetBrainsMonoFamily
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (isRunning) {
-                        OutlinedButton(
-                            onClick = {
-                                isResting = !isResting
-                                if (isResting) restRemaining = exercise.restSeconds
-                            },
-                            border = BorderStroke(1.dp, DeFittGold)
-                        ) {
-                            Icon(Icons.Default.Schedule, contentDescription = null, tint = DeFittGold, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(if (isResting) "Reanudar" else "Descanso", color = DeFittGold)
-                        }
-                    }
-                    Button(
-                        onClick = { isRunning = !isRunning },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = DeFittBlack),
-                        modifier = Modifier.testTag("exercise_start_button")
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (isRunning) "PAUSAR" else "COMENZAR")
-                    }
-                }
-            }
-        }
-
-        Text(
-            text = "Explicación",
-            style = MaterialTheme.typography.titleMedium,
-            color = DeFittWhite
-        )
-        Text(
-            text = exercise.explanation,
-            style = MaterialTheme.typography.bodyLarge,
-            color = DeFittTextSecondary
-        )
-
-        Text(
-            text = "Instrucciones paso a paso",
-            style = MaterialTheme.typography.titleMedium,
-            color = DeFittWhite
-        )
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = DeFittSurfaceCard,
-            border = BorderStroke(1.dp, DeFittBorder),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = exercise.instructions,
-                style = MaterialTheme.typography.bodyLarge,
-                color = DeFittWhite,
-                modifier = Modifier.padding(14.dp)
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OutlinedButton(
-                onClick = onClose,
-                modifier = Modifier.weight(1f).height(52.dp),
-                border = BorderStroke(1.dp, DeFittBorder),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("Cerrar", color = DeFittTextSecondary)
-            }
-            Button(
-                onClick = {
-                    val recorded = elapsedSeconds.coerceAtLeast(exercise.durationSeconds / 2)
-                    onComplete(recorded)
-                },
-                modifier = Modifier
-                    .weight(1.6f)
-                    .height(52.dp)
-                    .testTag("exercise_complete_button"),
-                colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = DeFittBlack),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(Icons.Default.CheckCircle, contentDescription = null)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("COMPLETAR")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
     }
 }

@@ -24,6 +24,8 @@ import com.example.util.DateUtils
 import com.example.util.PinHasher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -42,6 +44,7 @@ class DeFittRepository(
     private val rewardsDao = db.rewardsDao()
     private val historyDao = db.historyDao()
 
+    private val stepEventMutex = Mutex()
     private var lastSensorReadingSavedAt = 0L
 
     suspend fun initializeCatalog() {
@@ -343,112 +346,149 @@ class DeFittRepository(
 
     /**
      * Processes a real hardware sensor event from TYPE_STEP_COUNTER, TYPE_STEP_DETECTOR,
-     * or ACCELEROMETER_FALLBACK. Never fabricates steps.
+     * or ACCELEROMETER_FALLBACK. Never fabricates steps or hours.
      */
     suspend fun recordStepSensorEvent(
         userId: Long,
         sensorType: String,
         rawValue: Float,
         isCumulativeCounter: Boolean,
-        dateKey: String = DateUtils.todayKey()
+        dateKey: String = DateUtils.todayKey(),
+        nowMs: Long = System.currentTimeMillis(),
+        elapsedRealtimeMs: Long = android.os.SystemClock.elapsedRealtime()
     ) = withContext(Dispatchers.IO) {
-        ensureCurrentDay(userId, dateKey)
-        val settings = userDao.getSettings(userId)
-        val stride = settings?.strideLengthMeters ?: 0.72
-        val profile = userDao.getProfile(userId)
-        val goal = profile?.dailyStepGoal ?: 6000
+        if (!rawValue.isFinite() || rawValue < 0f) return@withContext
+        stepEventMutex.withLock {
+            ensureCurrentDay(userId, dateKey)
+            val settings = userDao.getSettings(userId)
+            val stride = settings?.strideLengthMeters ?: 0.72
+            val profile = userDao.getProfile(userId)
+            val goal = profile?.dailyStepGoal ?: 6000
+            val currentBootTimestampMs = (nowMs - elapsedRealtimeMs).coerceAtLeast(0L)
 
-        db.withTransaction {
-            val current = stepsDao.getDailySteps(userId, dateKey) ?: DailyStepsEntity(
-                userId = userId,
-                dateKey = dateKey,
-                stepGoal = goal
-            )
-
-            val deltaSteps: Int
-            val updatedBaseline: Float?
-            val updatedLastRaw: Float?
-
-            if (isCumulativeCounter) {
-                val prevRaw = current.lastSensorRawValue
-                when {
-                    prevRaw == null -> {
-                        // First reading of this day: establish baseline without claiming prior boot steps
-                        deltaSteps = 0
-                        updatedBaseline = rawValue
-                        updatedLastRaw = rawValue
-                    }
-                    rawValue >= prevRaw -> {
-                        deltaSteps = (rawValue - prevRaw).toInt().coerceAtLeast(0)
-                        updatedBaseline = current.sensorBaselineValue ?: rawValue
-                        updatedLastRaw = rawValue
-                    }
-                    else -> {
-                        // Device rebooted since last reading (cumulative counter reset to 0+)
-                        deltaSteps = rawValue.toInt().coerceAtLeast(0)
-                        updatedBaseline = 0f
-                        updatedLastRaw = rawValue
-                    }
-                }
-            } else {
-                // Step detector / accelerometer fallback emits 1 step per trigger
-                deltaSteps = rawValue.toInt().coerceAtLeast(0)
-                updatedBaseline = current.sensorBaselineValue
-                updatedLastRaw = current.lastSensorRawValue
-            }
-
-            val newSteps = current.steps + deltaSteps
-            val newDistance = newSteps * stride
-            val addedActiveSeconds = if (deltaSteps > 0) (deltaSteps * 0.55).toLong().coerceAtLeast(1L) else 0L
-            val newActiveSeconds = current.activeSeconds + addedActiveSeconds
-
-            stepsDao.upsertDailySteps(
-                current.copy(
-                    steps = newSteps,
-                    distanceMeters = newDistance,
-                    activeSeconds = newActiveSeconds,
-                    sensorBaselineValue = updatedBaseline,
-                    lastSensorRawValue = updatedLastRaw,
-                    stepGoal = goal,
-                    updatedAt = System.currentTimeMillis()
+            db.withTransaction {
+                val current = stepsDao.getDailySteps(userId, dateKey) ?: DailyStepsEntity(
+                    userId = userId,
+                    dateKey = dateKey,
+                    stepGoal = goal
                 )
-            )
 
-            val now = System.currentTimeMillis()
-            if (deltaSteps > 0 && (now - lastSensorReadingSavedAt > 4000L || !isCumulativeCounter)) {
-                lastSensorReadingSavedAt = now
-                stepsDao.insertSensorReading(
-                    SensorReadingEntity(
-                        userId = userId,
-                        dateKey = dateKey,
-                        sensorType = sensorType,
-                        rawValue = rawValue,
-                        deltaSteps = deltaSteps,
-                        recordedAt = now
+                val prevRaw = current.lastSensorRawValue
+                val prevTs = current.lastSensorTimestampMs
+                val elapsedSinceLastEventMs = if (prevTs > 0L) (nowMs - prevTs).coerceAtLeast(0L) else 0L
+                val rebootDetectedByTimestamp = current.lastBootTimestampMs > 0L &&
+                    kotlin.math.abs(currentBootTimestampMs - current.lastBootTimestampMs) > 60_000L
+
+                val deltaSteps: Int
+                val updatedBaseline: Float?
+                val updatedLastRaw: Float?
+
+                if (isCumulativeCounter) {
+                    val rawInt = kotlin.math.round(rawValue).toInt().coerceAtLeast(0)
+                    when {
+                        prevRaw == null -> {
+                            // First reading of this day: establish baseline without claiming prior boot steps
+                            deltaSteps = 0
+                            updatedBaseline = rawValue
+                            updatedLastRaw = rawValue
+                        }
+                        prevRaw == 0f && rawValue > 250f && elapsedSinceLastEventMs <= 60_000L -> {
+                            // Guard against Android HAL wake-up flush (0f followed immediately by cached boot total)
+                            deltaSteps = 0
+                            updatedBaseline = rawValue
+                            updatedLastRaw = rawValue
+                        }
+                        rawValue >= prevRaw && !rebootDetectedByTimestamp -> {
+                            deltaSteps = kotlin.math.round(rawValue - prevRaw).toInt().coerceAtLeast(0)
+                            updatedBaseline = current.sensorBaselineValue ?: rawValue
+                            updatedLastRaw = rawValue
+                        }
+                        else -> {
+                            // Device rebooted since last reading (cumulative counter reset).
+                            // Only count fresh post-reboot steps if plausibly recent (<= 500 steps);
+                            // otherwise re-anchor safely so stale boot totals aren't added.
+                            if (rawInt <= 500) {
+                                deltaSteps = rawInt
+                                updatedBaseline = 0f
+                                updatedLastRaw = rawValue
+                            } else {
+                                deltaSteps = 0
+                                updatedBaseline = rawValue
+                                updatedLastRaw = rawValue
+                            }
+                        }
+                    }
+                } else {
+                    // Step detector / accelerometer fallback emits incremental steps directly
+                    deltaSteps = kotlin.math.round(rawValue).toInt().coerceAtLeast(0)
+                    updatedBaseline = current.sensorBaselineValue
+                    updatedLastRaw = current.lastSensorRawValue
+                }
+
+                val newSteps = current.steps + deltaSteps
+                val newDistance = newSteps * stride
+                // Calculate active time only from real bounded elapsed movement intervals (never invent hours)
+                val addedActiveSeconds = if (deltaSteps > 0) {
+                    if (prevTs > 0L && elapsedSinceLastEventMs > 0L) {
+                        val realElapsedSec = (elapsedSinceLastEventMs / 1000L).coerceAtLeast(1L)
+                        minOf(realElapsedSec, deltaSteps * 2L, 600L)
+                    } else {
+                        minOf(deltaSteps.toLong(), 2L)
+                    }
+                } else {
+                    0L
+                }
+                val newActiveSeconds = current.activeSeconds + addedActiveSeconds
+
+                stepsDao.upsertDailySteps(
+                    current.copy(
+                        steps = newSteps,
+                        distanceMeters = newDistance,
+                        activeSeconds = newActiveSeconds,
+                        sensorBaselineValue = updatedBaseline,
+                        lastSensorRawValue = updatedLastRaw,
+                        lastSensorTimestampMs = nowMs,
+                        lastBootTimestampMs = currentBootTimestampMs,
+                        stepGoal = goal,
+                        updatedAt = nowMs
                     )
                 )
-            }
 
-            // Award walk milestone coins (5 coins per 1,000 steps, capped at 30 coins/day to avoid excessive activity incentive)
-            if (newSteps >= 1000) {
-                val milestone = (newSteps / 1000).coerceAtMost(6)
-                for (m in 1..milestone) {
-                    val dedup = "walk_${dateKey}_$m"
-                    rewardsDao.insertCoinTransaction(
-                        CoinTransactionEntity(
+                if (deltaSteps > 0 && (nowMs - lastSensorReadingSavedAt > 4000L || !isCumulativeCounter)) {
+                    lastSensorReadingSavedAt = nowMs
+                    stepsDao.insertSensorReading(
+                        SensorReadingEntity(
                             userId = userId,
                             dateKey = dateKey,
-                            amount = 5,
-                            reason = "Caminata saludable (${m * 1000} pasos)",
-                            sourceType = "WALK",
-                            dedupKey = dedup
+                            sensorType = sensorType,
+                            rawValue = rawValue,
+                            deltaSteps = deltaSteps,
+                            recordedAt = nowMs
                         )
                     )
                 }
-            }
 
-            evaluateAchievementsInternal(userId, dateKey)
-            syncDailyHistorySnapshotInternal(userId, dateKey)
+                // Award walk milestone coins (5 coins per 1,000 steps, capped at 30 coins/day)
+                if (newSteps >= 1000) {
+                    val milestone = (newSteps / 1000).coerceAtMost(6)
+                    for (m in 1..milestone) {
+                        val dedup = "walk_${dateKey}_$m"
+                        rewardsDao.insertCoinTransaction(
+                            CoinTransactionEntity(
+                                userId = userId,
+                                dateKey = dateKey,
+                                amount = 5,
+                                reason = "Caminata saludable (${m * 1000} pasos)",
+                                sourceType = "WALK",
+                                dedupKey = dedup
+                            )
+                        )
+                    }
+                }
+
+                evaluateAchievementsInternal(userId, dateKey)
+                syncDailyHistorySnapshotInternal(userId, dateKey)
+            }
         }
     }
 

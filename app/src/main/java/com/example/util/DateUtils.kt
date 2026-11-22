@@ -82,7 +82,18 @@ object DateUtils {
     fun formatDayMonth(dateKey: String): String =
         dayMonthFormat.format(parseDateKey(dateKey).time)
 
+    fun formatDistance(distanceMeters: Double): String {
+        val safe = distanceMeters.coerceAtLeast(0.0)
+        return if (safe < 1000.0) {
+            "${safe.toInt()} m"
+        } else {
+            String.format(Locale.getDefault(), "%.2f km", safe / 1000.0)
+        }
+    }
+
     fun formatDurationMinutes(seconds: Long): String {
+        if (seconds <= 0L) return "0 min"
+        if (seconds < 60L) return "${seconds} s"
         val mins = seconds / 60
         val hrs = mins / 60
         val remMins = mins % 60

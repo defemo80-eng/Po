@@ -1,7 +1,6 @@
 package com.example.sensors
 
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -20,13 +19,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 class StepTrackingService : android.app.Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var sensorManager: StepSensorManager? = null
-    private var currentActiveUserId: Long? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -40,34 +36,14 @@ class StepTrackingService : android.app.Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startHardwareSensorIfPermitted()
+        (application as DeFittApplication).stepSensorCoordinator.startListeningIfPermitted()
         return START_STICKY
-    }
-
-    private fun startHardwareSensorIfPermitted() {
-        if (sensorManager == null) {
-            sensorManager = StepSensorManager(this) { kind, raw, isCumulative ->
-                val userId = currentActiveUserId ?: return@StepSensorManager
-                serviceScope.launch {
-                    val repo = (application as DeFittApplication).repository
-                    repo.recordStepSensorEvent(
-                        userId = userId,
-                        sensorType = kind.code,
-                        rawValue = raw,
-                        isCumulativeCounter = isCumulative,
-                        dateKey = DateUtils.todayKey()
-                    )
-                }
-            }
-        }
-        sensorManager?.startListening()
     }
 
     private fun observeActiveSessionAndSteps() {
         val repo = (application as DeFittApplication).repository
         serviceScope.launch {
             repo.observeActiveUser().collectLatest { user ->
-                currentActiveUserId = user?.id
                 if (user == null) {
                     stopSelf()
                     return@collectLatest
@@ -107,7 +83,7 @@ class StepTrackingService : android.app.Service() {
     }
 
     private fun buildNotification(steps: Int, distanceMeters: Double): Notification {
-        val km = String.format(Locale.getDefault(), "%.2f km", distanceMeters / 1000.0)
+        val distText = DateUtils.formatDistance(distanceMeters)
         val openIntent = PendingIntent.getActivity(
             this,
             0,
@@ -118,7 +94,7 @@ class StepTrackingService : android.app.Service() {
         return NotificationCompat.Builder(this, DeFittNotificationHelper.CHANNEL_STEPS)
             .setSmallIcon(R.mipmap.ic_launcher_round)
             .setContentTitle("DeFitt · $steps pasos hoy")
-            .setContentText("Distancia estimada: $km · Conteo local activo")
+            .setContentText("Distancia estimada: $distText · Conteo local activo")
             .setContentIntent(openIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -128,7 +104,6 @@ class StepTrackingService : android.app.Service() {
     }
 
     override fun onDestroy() {
-        sensorManager?.stopListening()
         serviceScope.cancel()
         super.onDestroy()
     }

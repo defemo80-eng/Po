@@ -60,6 +60,8 @@ data class DailyStepsEntity(
     val activeSeconds: Long = 0L,
     val sensorBaselineValue: Float? = null,
     val lastSensorRawValue: Float? = null,
+    val lastSensorTimestampMs: Long = 0L,
+    val lastBootTimestampMs: Long = 0L,
     val stepGoal: Int = 6000,
     val updatedAt: Long = System.currentTimeMillis()
 )
@@ -150,7 +152,9 @@ data class ExerciseEntity(
     val recommendedReps: String,
     val restSeconds: Int,
     val illustrationKey: String,
-    val isWarmupOrRecovery: Boolean = false
+    val isWarmupOrRecovery: Boolean = false,
+    val safetyWarning: String = "",
+    val videoResName: String = ""
 )
 
 @Entity(

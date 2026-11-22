@@ -303,7 +303,7 @@ fun RecordsAndDailyLogScreen(
                     )
                 }
                 items(allHistory, key = { "day_${it.dateKey}" }) { h ->
-                    val distKm = String.format(Locale.getDefault(), "%.2f km", h.distanceMeters / 1000.0)
+                    val distKm = DateUtils.formatDistance(h.distanceMeters)
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = DeFittSurfaceCard,
@@ -423,7 +423,7 @@ private fun DailySummaryBanner(
     onBackToToday: () -> Unit
 ) {
     val steps = history?.steps ?: 0
-    val distanceKm = String.format(Locale.getDefault(), "%.2f km", (history?.distanceMeters ?: 0.0) / 1000.0)
+    val distanceKm = DateUtils.formatDistance(history?.distanceMeters ?: 0.0)
     val activeMin = DateUtils.formatDurationMinutes(history?.activeSeconds ?: 0L)
 
     Surface(

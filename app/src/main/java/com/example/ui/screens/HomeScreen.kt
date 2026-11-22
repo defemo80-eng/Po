@@ -113,7 +113,7 @@ fun HomeScreen(
     val goal = profile?.dailyStepGoal ?: todaySteps?.stepGoal ?: 6000
     val distanceMeters = todaySteps?.distanceMeters ?: 0.0
     val activeSeconds = todaySteps?.activeSeconds ?: 0L
-    val distanceFormatted = String.format(Locale.getDefault(), "%.2f km", distanceMeters / 1000.0)
+    val distanceFormatted = DateUtils.formatDistance(distanceMeters)
     val activeTimeFormatted = DateUtils.formatDurationMinutes(activeSeconds)
     val progressPct = if (goal > 0) ((steps * 100f) / goal).toInt().coerceAtMost(999) else 0
 

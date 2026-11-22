@@ -22,7 +22,6 @@ import com.example.notifications.DeFittNotificationHelper
 import com.example.sensors.ActiveStepSensorKind
 import com.example.sensors.DeviceSensorStatus
 import com.example.sensors.SensorCapabilityInspector
-import com.example.sensors.StepSensorManager
 import com.example.sensors.StepTrackingService
 import com.example.util.DateUtils
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -66,8 +65,6 @@ class DeFittViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _snackbarMessage = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val snackbarMessage: SharedFlow<String> = _snackbarMessage.asSharedFlow()
-
-    private var foregroundSensorManager: StepSensorManager? = null
 
     val authState: StateFlow<AuthUiState> = repo.observeActiveUser()
         .flatMapLatest { activeUser ->
@@ -222,28 +219,16 @@ class DeFittViewModel(application: Application) : AndroidViewModel(application) 
         val app = getApplication<DeFittApplication>()
         _sensorStatus.value = SensorCapabilityInspector.inspect(app)
         if (!SensorCapabilityInspector.hasActivityRecognitionPermission(app)) return
-        if (foregroundSensorManager == null) {
-            foregroundSensorManager = StepSensorManager(app) { kind, rawValue, isCumulative ->
-                viewModelScope.launch {
-                    val user = repo.getActiveUser() ?: return@launch
-                    val settings = repo.getSettings(user.id)
-                    // Avoid double-counting when StepTrackingService is running unless service isn't active;
-                    // TYPE_STEP_COUNTER uses rawValue comparison so duplicate events produce 0 delta!
-                    if (isCumulative || settings?.backgroundStepTrackingEnabled != true) {
-                        repo.recordStepSensorEvent(
-                            userId = user.id,
-                            sensorType = kind.code,
-                            rawValue = rawValue,
-                            isCumulativeCounter = isCumulative,
-                            dateKey = DateUtils.todayKey()
-                        )
-                    }
+        val startedKind = app.stepSensorCoordinator.startListeningIfPermitted()
+        if (startedKind != ActiveStepSensorKind.NONE) {
+            val activeUserId = (authState.value as? AuthUiState.Authenticated)?.user?.id
+            viewModelScope.launch {
+                val uid = activeUserId ?: repo.getActiveUser()?.id
+                val bgEnabled = uid?.let { repo.getSettings(it)?.backgroundStepTrackingEnabled } != false
+                if (bgEnabled) {
+                    StepTrackingService.startIfPermitted(app)
                 }
             }
-        }
-        val startedKind = foregroundSensorManager?.startListening() ?: ActiveStepSensorKind.NONE
-        if (startedKind != ActiveStepSensorKind.NONE) {
-            StepTrackingService.startIfPermitted(app)
         }
     }
 
@@ -295,8 +280,9 @@ class DeFittViewModel(application: Application) : AndroidViewModel(application) 
 
     fun logout() {
         viewModelScope.launch {
-            foregroundSensorManager?.stopListening()
-            StepTrackingService.stop(getApplication())
+            val app = getApplication<DeFittApplication>()
+            app.stepSensorCoordinator.stopListening()
+            StepTrackingService.stop(app)
             repo.logoutActiveSession()
         }
     }
@@ -364,8 +350,9 @@ class DeFittViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteLocalAccount() {
         val current = authState.value as? AuthUiState.Authenticated ?: return
         viewModelScope.launch {
-            foregroundSensorManager?.stopListening()
-            StepTrackingService.stop(getApplication())
+            val app = getApplication<DeFittApplication>()
+            app.stepSensorCoordinator.stopListening()
+            StepTrackingService.stop(app)
             repo.deleteLocalAccount(current.user.id)
             _snackbarMessage.tryEmit("Cuenta y datos locales eliminados")
         }
@@ -459,7 +446,6 @@ class DeFittViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     override fun onCleared() {
-        foregroundSensorManager?.stopListening()
         super.onCleared()
     }
 }
